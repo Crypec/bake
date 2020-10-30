@@ -1,12 +1,14 @@
-use coffee::graphics::{Color, Frame, Mesh, Point, Rectangle, Shape, Window, Image};
+use crate::search::*;
+use coffee::graphics::{Color, Frame, Mesh, Point, Rectangle, Shape, Window};
 use coffee::input::keyboard::KeyCode;
 use coffee::input::{self, keyboard, ButtonState, Input};
 use coffee::load::Task;
 use coffee::ui::{Column, Element, Justify, Renderer, Text, UserInterface};
 use coffee::{Game, Timer};
-use paris::*;
+use std::fs::File;
+use std::time::Instant;
 
-use crate::snake::{Apple, Snake};
+use crate::snake::{Apple, Position, Snake};
 
 pub const WINDOW_SIZE_X: usize = 600;
 pub const WINDOW_SIZE_Y: usize = WINDOW_SIZE_X;
@@ -14,21 +16,28 @@ pub const WINDOW_SIZE_Y: usize = WINDOW_SIZE_X;
 pub const WINDOW_SIZE_X_F32: f32 = WINDOW_SIZE_X as f32;
 pub const WINDOW_SIZE_Y_F32: f32 = WINDOW_SIZE_Y as f32;
 
-pub const NODE_SIZE: f32 = 30.0;
-pub const PROXIMITY_TRESHOLD: f32 = 2.0;
+pub const NODE_SIZE: usize = 30;
+pub const NODE_SIZE_F32: f32 = NODE_SIZE as f32;
 
-const MESH_COLOR: Color = Color {
+const GRID_COLOR: Color = Color {
 	r: 0.12941,
 	g: 0.27843,
 	b: 0.32157,
 	a: 1.0,
 };
 
+const PATH_COLOR: Color = Color {
+	r: 1.0,
+	g: 0.0,
+	b: 0.0,
+	a: 0.2,
+};
+
 const SNAKE_COLOR: Color = Color {
 	r: 0.23922,
 	g: 0.78039,
 	b: 0.06275,
-	a: 0.7,
+	a: 1.0,
 };
 
 const BG_COLOR: Color = Color {
@@ -45,13 +54,24 @@ pub struct SnakeGame {
 	speed: u32,
 	tick: u32,
 	score: u32,
-	misc: Misc,
+	mode: Mode,
+	path: Vec<Position>,
+	searcher: Searcher,
+	should_close: bool,
 }
 
-#[derive(Debug)]
-struct Misc {
-	apple: Option<Image>,
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum Mode {
+	Computer,
+	Human,
 }
+
+pub const GAME_LOWER_BOUND: Position = Position { x: 0, y: 0 };
+
+pub const GAME_UPPER_BOUND: Position = Position {
+	x: WINDOW_SIZE_X as isize,
+	y: WINDOW_SIZE_Y as isize,
+};
 
 impl SnakeGame {
 	pub fn new() -> Self {
@@ -60,10 +80,11 @@ impl SnakeGame {
 			speed: 20,
 			tick: 0,
 			score: 0,
+			mode: Mode::Human,
 			apple: Apple::new(),
-			misc: Misc {
-				apple: None,
-			}
+			path: vec![],
+			searcher: Searcher::new(),
+			should_close: false,
 		}
 	}
 
@@ -71,11 +92,36 @@ impl SnakeGame {
 		self.snake = Snake::new();
 		self.spawn_new_apple();
 		self.score = 0;
+		self.mode = Mode::Human;
 	}
 
-	fn ate_apple(&mut self) -> bool {
-		let head = self.snake.tail.last().unwrap();
-		self.apple.pos.dist(*head) <= PROXIMITY_TRESHOLD
+	fn get_next_direction(&self) -> Option<Direction> {
+		let head = self.snake.head().unwrap();
+		if let Some(p) = self.path.last() {
+			let dx = ((p.x - head.x) as f32 * (1.0 / NODE_SIZE_F32)) as i8;
+			let dy = ((p.y - head.y) as f32 * (1.0 / NODE_SIZE_F32)) as i8;
+			match (dx, dy) {
+				(-1, 0) => Some(Direction::Left),
+				(1, 0) => Some(Direction::Right),
+				(0, 1) => Some(Direction::Down),
+				(0, -1) => Some(Direction::Up),
+				_ => None,
+			}
+		} else {
+			None
+		}
+	}
+
+	fn toggle_mode(&mut self) {
+		match self.mode {
+			Mode::Human => self.mode = Mode::Computer,
+			Mode::Computer => self.mode = Mode::Human,
+		}
+	}
+
+	fn ate_apple(&self) -> bool {
+		let head = self.snake.head().unwrap();
+		self.apple.pos == *head
 	}
 
 	fn spawn_new_apple(&mut self) {
@@ -93,15 +139,15 @@ impl SnakeGame {
 		for node in &self.snake.tail {
 			mesh.fill(
 				Shape::Rectangle(Rectangle {
-					x: node.x,
-					y: node.y,
-					width: NODE_SIZE,
-					height: NODE_SIZE,
+					x: node.x as f32,
+					y: node.y as f32,
+					width: NODE_SIZE_F32,
+					height: NODE_SIZE_F32,
 				}),
 				SNAKE_COLOR,
 			);
-			mesh.draw(&mut frame.as_target())
 		}
+		mesh.draw(&mut frame.as_target())
 	}
 
 	pub fn draw_grid(frame: &mut Frame) {
@@ -112,56 +158,156 @@ impl SnakeGame {
 			let i = i as f32;
 			let line = Shape::Polyline {
 				points: vec![
-					Point::new(i * NODE_SIZE, 0.0),
-					Point::new(i * NODE_SIZE, WINDOW_SIZE_Y_F32),
+					Point::new(i * NODE_SIZE_F32, 0.0),
+					Point::new(i * NODE_SIZE_F32, WINDOW_SIZE_Y_F32),
 				],
 			};
-			mesh.stroke(line, MESH_COLOR, 1.0);
+			mesh.stroke(line, GRID_COLOR, 1.0);
 		}
 		for i in 0..y_bound {
 			let i = i as f32;
 			let line = Shape::Polyline {
 				points: vec![
-					Point::new(0.0, i * NODE_SIZE),
-					Point::new(WINDOW_SIZE_X_F32, i * NODE_SIZE),
+					Point::new(0.0, i * NODE_SIZE_F32),
+					Point::new(WINDOW_SIZE_X_F32, i * NODE_SIZE_F32),
 				],
 			};
-			mesh.stroke(line, MESH_COLOR, 1.0);
+			mesh.stroke(line, GRID_COLOR, 1.0);
 		}
 		mesh.draw(&mut frame.as_target())
+	}
+
+	fn draw_path(&self, frame: &mut Frame) {
+		let mut mesh = Mesh::new();
+		let mid = NODE_SIZE_F32 / 2.0;
+
+		for pos in &self.path {
+			mesh.fill(
+				Shape::Rectangle(Rectangle {
+					x: pos.x as f32,
+					y: pos.y as f32,
+					width: NODE_SIZE_F32,
+					height: NODE_SIZE_F32,
+				}),
+				PATH_COLOR,
+			);
+		}
+
+		let mut points = self
+			.path
+			.iter()
+			.map(|p| (p.x as f32, p.y as f32))
+			.map(|(x, y)| Point::new(x + mid, y + mid))
+			.collect::<Vec<Point>>();
+		let head = self.snake.head().unwrap();
+
+		points.push(Point::new(head.x as f32 + mid, head.y as f32 + mid));
+		let line = Shape::Polyline { points };
+
+		mesh.stroke(line, Color::RED, 2.0);
+		mesh.draw(&mut frame.as_target())
+	}
+
+	// fn draw_maze(&self, frame: &mut Frame) {
+	//	let mut mesh = Mesh::new();
+	//	for pos in &self.maze.obstacles {
+	//		mesh.fill(
+	//			Shape::Rectangle(Rectangle {
+	//				x: pos.x as f32,
+	//				y: pos.y as f32,
+	//				width: NODE_SIZE_F32,
+	//				height: NODE_SIZE_F32,
+	//			}),
+	//			Color::WHITE,
+	//		);
+	//	}
+	//	mesh.fill(
+	//		Shape::Rectangle(Rectangle {
+	//			x: self.maze.start.x as f32,
+	//			y: self.maze.start.y as f32,
+	//			width: NODE_SIZE_F32,
+	//			height: NODE_SIZE_F32,
+	//		}),
+	//		Color::RED,
+	//	);
+	//	mesh.fill(
+	//		Shape::Rectangle(Rectangle {
+	//			x: self.maze.end.x as f32,
+	//			y: self.maze.end.y as f32,
+	//			width: NODE_SIZE_F32,
+	//			height: NODE_SIZE_F32,
+	//		}),
+	//		Color::BLUE,
+	//	);
+	//	mesh.draw(&mut frame.as_target())
+	// }
+
+	fn is_outside(&self) -> bool {
+		let head = self.snake.head().unwrap();
+		!head.in_range(GAME_LOWER_BOUND, GAME_UPPER_BOUND)
+	}
+
+	fn dump_to_file(head: Position, snake: &[Position], end: Position) {
+		let data = format!("{:#?}\n{:#?}\n{:#?}\n", head, snake, end);
+		std::fs::write("./data_dump", data).expect("failed to read file");
 	}
 }
 
 impl Game for SnakeGame {
-	const TICKS_PER_SECOND: u16 = 12;
+	const TICKS_PER_SECOND: u16 = 30;
 	type Input = CustomInput;
 	type LoadingScreen = ();
 
 	fn load(_window: &Window) -> Task<Self> {
-		Image::load("./misc/apple.png").map(|image| {
-			let mut game = Self::new();
-			game.misc.apple = Some(image);
-			game
-		})
+		Task::succeed(Self::new)
 	}
 
 	fn draw(&mut self, frame: &mut Frame, _timer: &Timer) {
-		self.misc.apple.unwrap().draw(frame.as_target());
 		frame.clear(BG_COLOR);
 		Self::draw_grid(frame);
 		self.draw_tail(frame);
 		self.apple.draw(frame);
+		if self.mode == Mode::Computer {
+			self.draw_path(frame);
+		}
 	}
 
 	fn update(&mut self, _window: &Window) {
+		if self.mode == Mode::Computer {
+			let now = Instant::now();
+			let start = self.snake.head().unwrap();
+			self.path = self
+				.searcher
+				.a_star(*start, self.apple.pos, &self.snake.tail)
+				.expect("Failed to find Path");
+			let elapsed = now.elapsed().as_micros();
+			if elapsed > 1000 {
+				flame::dump_html(File::create("flamegraph.html").unwrap()).unwrap();
+				Self::dump_to_file(
+					*self.snake.head().unwrap(),
+					&self.snake.tail,
+					self.apple.pos,
+				);
+			}
+			println!("Time to calculate new Path {}μs", elapsed);
+
+			let direction = self.get_next_direction();
+			match direction {
+				Some(dir) if self.snake.direction_is_legal(dir) => {
+					self.snake.direction = self.get_next_direction();
+				}
+				Some(_) | None => {}
+			}
+		}
+
 		self.snake.update();
-		if self.snake.ate_itself() {
+		if self.is_outside() || self.snake.ate_itself() {
 			self.reset();
+			return;
 		}
 		if self.ate_apple() {
 			self.score += 1;
 			self.snake.add_node(self.apple.pos);
-			info!("ate apple");
 			self.spawn_new_apple();
 		}
 	}
@@ -180,9 +326,15 @@ impl Game for SnakeGame {
 			Some(KeyCode::D) | Some(KeyCode::Right) | Some(KeyCode::L) => {
 				self.snake.set_direction(Direction::Right);
 			}
+			Some(KeyCode::T) => self.toggle_mode(),
 			Some(KeyCode::R) => self.reset(),
+			Some(KeyCode::Escape) => self.should_close = true,
 			_ => {}
 		}
+	}
+
+	fn is_finished(&self) -> bool {
+		self.should_close
 	}
 }
 
@@ -227,13 +379,19 @@ impl UserInterface for SnakeGame {
 
 	fn layout(&mut self, window: &Window) -> Element<Self::Message> {
 		let score = format!("Score: {}", self.score);
+		let direction = match self.snake.direction {
+			Some(dir) => format!("Direction: {:#?}", dir),
+			None => "Standing still".into(),
+		};
+
 		Column::new()
 			.padding(20)
 			.spacing(20)
 			.width(window.width() as u32)
 			.height(window.height() as u32)
-			.justify_content(Justify::Start)
+			.justify_content(Justify::End)
 			.push(Text::new(&score))
+			.push(Text::new(&direction))
 			.into()
 	}
 }

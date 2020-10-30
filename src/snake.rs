@@ -1,6 +1,4 @@
-use crate::game::{
-	Direction, NODE_SIZE, WINDOW_SIZE_X, WINDOW_SIZE_X_F32, WINDOW_SIZE_Y, WINDOW_SIZE_Y_F32,
-};
+use crate::game::{Direction, NODE_SIZE, NODE_SIZE_F32, WINDOW_SIZE_X, WINDOW_SIZE_Y};
 use coffee::graphics::{Color, Frame, Mesh, Rectangle, Shape};
 use rand::Rng;
 
@@ -16,10 +14,9 @@ impl Snake {
 	pub fn new() -> Self {
 		let tail = (1..START_SNAKE_LEN)
 			.into_iter()
-			.map(|i| i as f32)
 			.map(|i| Position {
-				x: i * NODE_SIZE,
-				y: 2.0 * NODE_SIZE,
+				x: (i * NODE_SIZE) as isize,
+				y: 2 * NODE_SIZE as isize,
 			})
 			.collect::<Vec<_>>();
 		Self {
@@ -29,8 +26,8 @@ impl Snake {
 	}
 
 	pub fn ate_itself(&self) -> bool {
-		let head = self.tail.last().cloned().unwrap();
-		self.is_inside(head)
+		let head = self.head().unwrap();
+		self.is_inside(*head)
 	}
 
 	pub fn is_inside(&self, pos: Position) -> bool {
@@ -42,43 +39,45 @@ impl Snake {
 		if self.tail.len() >= START_SNAKE_LEN {
 			self.tail.remove(0);
 		}
-		let head = self.tail.last().cloned().unwrap();
+
+		let head = self.head().cloned().unwrap();
 		match self.direction {
 			Some(Direction::Up) => {
 				self.tail.push(Position {
 					x: head.x,
-					y: head.y - NODE_SIZE,
+					y: head.y - NODE_SIZE as isize,
 				});
 			}
 			Some(Direction::Down) => self.tail.push(Position {
 				x: head.x,
-				y: head.y + NODE_SIZE,
+				y: head.y + NODE_SIZE as isize,
 			}),
 			Some(Direction::Left) => self.tail.push(Position {
-				x: head.x - NODE_SIZE,
+				x: head.x - NODE_SIZE as isize,
 				y: head.y,
 			}),
 			Some(Direction::Right) => self.tail.push(Position {
-				x: head.x + NODE_SIZE,
+				x: head.x + NODE_SIZE as isize,
 				y: head.y,
 			}),
-			None => return,
+			None => {}
 		};
-		self.teleport_if_outside()
+		//self.teleport_if_outside()
 	}
 
+	#[allow(dead_code)]
 	fn teleport_if_outside(&mut self) {
 		let head = self.tail.last_mut().unwrap();
 		match self.direction {
-			Some(Direction::Up) if head.y < 0.0 => head.y = WINDOW_SIZE_Y_F32,
-			Some(Direction::Down) if head.y > WINDOW_SIZE_Y_F32 => head.y = 0.0,
-			Some(Direction::Left) if head.x < 0.0 => head.x = WINDOW_SIZE_X_F32,
-			Some(Direction::Right) if head.x > WINDOW_SIZE_X_F32 => head.x = 0.0,
+			Some(Direction::Down) if head.y > WINDOW_SIZE_Y as isize => head.y = 0,
+			Some(Direction::Right) if head.x > WINDOW_SIZE_X as isize => head.x = 0,
+			Some(Direction::Up) if head.y < 0 => head.y = WINDOW_SIZE_Y as isize,
+			Some(Direction::Left) if head.x < 0 => head.x = WINDOW_SIZE_X as isize,
 			_ => {}
 		}
 	}
 
-	const fn direction_is_legal(&self, direction: Direction) -> bool {
+	pub const fn direction_is_legal(&self, direction: Direction) -> bool {
 		!matches!(
 			(self.direction, direction),
 			(Some(Direction::Up), Direction::Down)
@@ -97,19 +96,47 @@ impl Snake {
 	pub fn add_node(&mut self, pos: Position) {
 		self.tail.push(pos)
 	}
+
+	pub fn head(&self) -> Option<&Position> {
+		self.tail.last()
+	}
+
+	#[allow(dead_code)]
+	pub fn head_mut(&mut self) -> Option<&mut Position> {
+		self.tail.last_mut()
+	}
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Hash)]
 pub struct Position {
-	pub x: f32,
-	pub y: f32,
+	pub x: isize,
+	pub y: isize,
 }
 
 impl Position {
-	pub fn dist(self, rhs: Self) -> f32 {
+	#[allow(dead_code)]
+	pub const fn mhtn_dist(self, rhs: Self) -> isize {
 		let dx = rhs.x - self.x;
 		let dy = rhs.y - self.y;
-		f32::sqrt(dy.mul_add(dy, dx * dx))
+		isize::abs(dx) + isize::abs(dy)
+	}
+
+	pub fn dist(self, rhs: Self) -> f32 {
+		let dx = (self.x - rhs.x) as f32;
+		let dy = (self.y - rhs.y) as f32;
+		dx * dx + dy * dy
+	}
+
+	#[inline(always)]
+	pub const fn in_range(self, lower: Self, upper: Self) -> bool {
+		self.x >= lower.x && self.x < upper.x && self.y >= lower.y && self.y < upper.y
+	}
+}
+
+impl Eq for Position {}
+impl Default for Position {
+	fn default() -> Self {
+		Self { x: 0, y: 0 }
 	}
 }
 
@@ -129,11 +156,11 @@ impl Apple {
 
 	fn rand_pos() -> Position {
 		let mut rng = rand::thread_rng();
-		let upper_x_bound = WINDOW_SIZE_X / NODE_SIZE as usize;
-		let upper_y_bound = WINDOW_SIZE_Y / NODE_SIZE as usize;
+		let upper_x_bound = WINDOW_SIZE_X / NODE_SIZE;
+		let upper_y_bound = WINDOW_SIZE_Y / NODE_SIZE;
 		Position {
-			x: NODE_SIZE * rng.gen_range(0, upper_x_bound) as f32,
-			y: NODE_SIZE * rng.gen_range(0, upper_y_bound) as f32,
+			x: (NODE_SIZE * rng.gen_range(0, upper_x_bound)) as isize,
+			y: (NODE_SIZE * rng.gen_range(0, upper_y_bound)) as isize,
 		}
 	}
 
@@ -141,10 +168,10 @@ impl Apple {
 		let mut mesh = Mesh::new();
 		mesh.fill(
 			Shape::Rectangle(Rectangle {
-				x: self.pos.x,
-				y: self.pos.y,
-				width: NODE_SIZE,
-				height: NODE_SIZE,
+				x: self.pos.x as f32,
+				y: self.pos.y as f32,
+				width: NODE_SIZE_F32,
+				height: NODE_SIZE_F32,
 			}),
 			Color::RED,
 		);

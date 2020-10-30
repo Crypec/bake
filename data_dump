@@ -1,0 +1,150 @@
+Position {
+    x: 150,
+    y: 240,
+}
+[
+    Position {
+        x: 270,
+        y: 240,
+    },
+    Position {
+        x: 270,
+        y: 270,
+    },
+    Position {
+        x: 270,
+        y: 300,
+    },
+    Position {
+        x: 240,
+        y: 300,
+    },
+    Position {
+        x: 240,
+        y: 330,
+    },
+    Position {
+        x: 210,
+        y: 330,
+    },
+    Position {
+        x: 210,
+        y: 360,
+    },
+    Position {
+        x: 180,
+        y: 360,
+    },
+    Position {
+        x: 180,
+        y: 390,
+    },
+    Position {
+        x: 150,
+        y: 390,
+    },
+    Position {
+        x: 150,
+        y: 420,
+    },
+    Position {
+        x: 120,
+        y: 420,
+    },
+    Position {
+        x: 120,
+        y: 420,
+    },
+    Position {
+        x: 120,
+        y: 390,
+    },
+    Position {
+        x: 120,
+        y: 360,
+    },
+    Position {
+        x: 120,
+        y: 330,
+    },
+    Position {
+        x: 120,
+        y: 300,
+    },
+    Position {
+        x: 120,
+        y: 270,
+    },
+    Position {
+        x: 120,
+        y: 240,
+    },
+    Position {
+        x: 120,
+        y: 210,
+    },
+    Position {
+        x: 120,
+        y: 180,
+    },
+    Position {
+        x: 120,
+        y: 150,
+    },
+    Position {
+        x: 120,
+        y: 120,
+    },
+    Position {
+        x: 120,
+        y: 90,
+    },
+    Position {
+        x: 120,
+        y: 60,
+    },
+    Position {
+        x: 120,
+        y: 30,
+    },
+    Position {
+        x: 150,
+        y: 30,
+    },
+    Position {
+        x: 150,
+        y: 30,
+    },
+    Position {
+        x: 150,
+        y: 60,
+    },
+    Position {
+        x: 150,
+        y: 90,
+    },
+    Position {
+        x: 150,
+        y: 120,
+    },
+    Position {
+        x: 150,
+        y: 150,
+    },
+    Position {
+        x: 150,
+        y: 180,
+    },
+    Position {
+        x: 150,
+        y: 210,
+    },
+    Position {
+        x: 150,
+        y: 240,
+    },
+]
+Position {
+    x: 210,
+    y: 570,
+}
